@@ -1,4 +1,5 @@
 import logging
+import random
 from telegram import *
 from telegram.ext import *
 from bot_admin import *
@@ -25,7 +26,33 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 #Create db (use on sqlite3)
 # sqlite3 bot.db "create table ranking (id integer primary key, lowername text, name text, score integer)"
 
+#Setup for media usage
+motiveme_media = []
+
 ADMIN = [hsnavarro_user_id]
+
+#Media
+def load_media():
+    motiveme_media.append(('image', 'media/AC_cf.png'))
+    motiveme_media.append(('image', 'media/AC_uri.png'))
+    motiveme_media.append(('image', 'media/AC_uva.png'))
+    motiveme_media.append(('image', 'media/AC_yandex_open.png'))
+    motiveme_media.append(('image', 'media/AC_yandex_blind.png'))
+    motiveme_media.append(('image', 'media/mistermax.png'))
+    motiveme_media.append(('image', 'media/last-min.jpg'))
+    motiveme_media.append(('video', 'media/dreams.mp4'))
+    motiveme_media.append(('video', 'media/yes-you-can.mp4'))
+    motiveme_media.append(('video', 'media/nothing-is-impossible.mp4'))
+
+def send_media(bot, update, media):
+    t, n = random.choice(media)
+    if t == 'image': bot.send_photo(chat_id=update.message.chat_id, photo=open(n, 'rb'))
+    if t == 'video': bot.send_video(chat_id=update.message.chat_id, video=open(n, 'rb'))
+
+#MotiveMe!
+def motiveme(bot, update):
+    media = motiveme_media
+    send_media(bot, update, media)
 
 def isSubSequence(pattern, text, n, m):
     if n == 0: return True
@@ -75,6 +102,108 @@ def isOk(bot, update):
     reply_markup = InlineKeyboardMarkup(custom_keyboard)
     bot.send_message(chat_id=update.message.chat_id,
             text='Você está bem?', reply_markup=reply_markup)
+
+#Show link list
+def upsolving(bot, update, args):
+    table = db["links"]
+    links = list(table.all())
+
+    if len(links) == 0:
+        bot.send_message(
+            chat_id = update.message.chat_id,
+            text="A lista está vazia! Isso é um bom sinal (ou não)")
+    else:
+        if len(args) == 0 or args[0] != 'all':
+            msg = "*Bonde do Upsolving*\n"
+
+            total_links = 8
+            if len(links) > total_links:
+              msg += "Mostrando últimos " + str(total_links) + " links\nUse `/links all` para mostrar todos\n\n"
+
+            for i in range(max(-total_links, -len(links)), 0):
+                msg += links[i]['name'] + ": " + links[i]['url'] + "\n"
+
+            bot.send_message(
+                chat_id = update.message.chat_id,
+                text = msg,
+                parse_mode = ParseMode.MARKDOWN,
+                disable_web_page_preview=True
+            )
+
+        else:
+            msg = "*Bonde do Upsolving*\n"
+
+            for link in links:
+                msg += link['name'] + ": " + link['url'] + "\n"
+
+            bot.send_message(
+                chat_id = update.message.chat_id,
+                text = msg,
+                parse_mode = ParseMode.MARKDOWN,
+                disable_web_page_preview=True
+            )
+
+
+def add_link_internal(update, name, link):
+    links_db = db['links']
+    links_db.upsert(dict(name=name, url=link), ['url'])
+
+    msg  = "*Nada melhor do que mais upsolving!*\n"
+    msg += "Link: " + link + "\n"
+    msg += "Descrição: " + name
+
+    update.message.reply_text(
+        msg,
+        parse_mode = ParseMode.MARKDOWN,
+        disable_web_page_preview=True
+    )
+
+def rem_link_internal(update, link):
+    links_db = db['links']
+    links_db.delete(url=link)
+    update.message.reply_text("Mais um upsolving concluído! (ou não)")
+
+def verify(update, link):
+    if "http" not in link:
+        update.effective_message.reply_text(
+            "Comando incorreto.\nIsso não é um link"
+        )
+        return 0
+    return 1
+
+@restricted
+def add_upsolving(bot, update, args): 
+    if len(args) < 2:
+        update.effective_message.reply_text(
+            "Comando incorreto.\nUso: /add_upsolving <descrição> <link>"
+        )
+        return
+
+    link = args[-1]
+    if not verify(update, link): return
+
+    name = ' '.join(args[:-1])
+    add_link_internal(update, name, link)
+
+@restricted
+def rem_upsolving(bot, update, args):
+    if len(args) < 1:
+        update.effective_message.reply_text(
+            "Comando incorreto.\nUso: /remove_link <link>"
+        )
+        return
+
+    link = args[0]
+    if not verify(update, link): return
+
+    links_db = db['links']
+    if not links_db.find_one(url=link):
+        update.effective_message.reply_text(
+            "Este link não está na lista"
+        )
+        return
+    
+    rem_link_internal(update, link)
 
 #Function caps
 def caps(bot, update, args):
@@ -160,7 +289,7 @@ def ranking(bot, update):
     if len(result) == 0:
         bot.send_message(chat_id=update.message.chat_id, text="Ranking Vazio!")
     else:
-        msg = "*Ranking da Iniciativa*\n"
+        msg = "*Ranking dos Coaches*\n"
         for user in result:
             msg += user['name'] + ': ' + str(user['score']) + '\n'
 
@@ -247,9 +376,9 @@ def reset(bot, update):
         bot.send_message(chat_id=update.message.chat_id,
                          text="Ranking já está vazio")
     else:
-        ranking = list(ranking.all())
-        for user in ranking:
-            ranking.delete(lowername=name.lower())
+        auxiliar = list(ranking.all())
+        for user in auxiliar:
+            ranking.delete(lowername=user['lowername'])
         bot.send_message(chat_id=update.message.chat_id,
                          text="Ranking foi resetado")
 ################################################################
@@ -277,9 +406,20 @@ filter_prova = FilterProve()
 filter_nposso = FilterCant()
 filter_posso = FilterCan()
 
+#Load Media
+load_media()
+
 #Add Handlers
 #dispatcher.add_handler(MessageHandler(Filters.text, echo))
 #dispatcher.add_handler(InlineQueryHandler(inline_caps))
+dispatcher.add_handler(CommandHandler('motiveme', motiveme))
+dispatcher.add_handler(CommandHandler('add_upsolving', 
+                                       add_upsolving, 
+                                       pass_args=True))
+dispatcher.add_handler(CommandHandler('rem_upsolving', 
+                                       rem_upsolving, 
+                                       pass_args=True))
+dispatcher.add_handler(CommandHandler('upsolving', upsolving, pass_args=True))
 dispatcher.add_handler(CommandHandler('start', start))
 dispatcher.add_handler(CommandHandler('fine', isOk))
 dispatcher.add_handler(CommandHandler('caps', caps, pass_args=True))

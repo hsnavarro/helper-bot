@@ -1,0 +1,11 @@
+motiveme - JUST DO IT!
+start - Start the Helper
+fine - Are you ok?
+ranking - Show the ranking
+change_ranking - Change score
+add_person - Add a person to the rank
+rem_person - Remove a person to the rank
+upsolving - Show the upsolving
+add_upsolving - Add a link to upsolving
+rem_upsolving - Remove a link from upsolving
+reset - Reset the ranking
